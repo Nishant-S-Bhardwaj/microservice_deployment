@@ -1,0 +1,23 @@
+const ROLES = { PASSENGER: 'passenger', RIDER: 'rider' };
+
+const RIDE_STATUS = {
+  REQUESTED: 'REQUESTED', ASSIGNED: 'ASSIGNED', ACCEPTED: 'ACCEPTED',
+  IN_PROGRESS: 'IN_PROGRESS', COMPLETED: 'COMPLETED', NO_RIDERS: 'NO_RIDERS',
+};
+const FINISHED_RIDE_STATUSES = [RIDE_STATUS.COMPLETED, RIDE_STATUS.NO_RIDERS];
+
+const RIDER_STATUS = { AVAILABLE: 'AVAILABLE', OFFERED: 'OFFERED', BUSY: 'BUSY' };
+
+const EVENTS = {
+  RIDER_WENT_ONLINE: 'rider.online',
+  RIDE_REQUESTED: 'ride.requested',
+  RIDE_OFFERED: 'ride.offered',
+  RIDE_NO_RIDERS: 'ride.no_riders',
+  RIDE_ACCEPTED: 'ride.accepted',
+  RIDE_REJECTED: 'ride.rejected',
+  RIDE_STARTED: 'ride.started',
+  RIDE_COMPLETED: 'ride.completed',
+  PAYMENT_COMPLETED: 'payment.completed',
+};
+
+module.exports = { ROLES, RIDE_STATUS, FINISHED_RIDE_STATUSES, RIDER_STATUS, EVENTS };
