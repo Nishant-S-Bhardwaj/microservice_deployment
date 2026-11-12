@@ -55,7 +55,7 @@ docker build -t uber-payment:local services/payment
 docker build -t uber-ui:local ui
 ```
 
-PostgreSQL and RabbitMQ have separate two-stage Dockerfiles under `infrastructure/`. These customize the official images; they do not bundle application data or credentials:
+PostgreSQL and RabbitMQ have separate Dockerfiles under `infrastructure/`. These customize the official images; they do not bundle application data or credentials:
 
 ```sh
 docker build -t uber-postgres:local infrastructure/postgres
@@ -63,6 +63,8 @@ docker build -t uber-rabbitmq:local infrastructure/rabbitmq
 ```
 
 Pass database/broker credentials and service connection settings at container runtime. Keep persistent database and RabbitMQ data in runtime-managed volumes, not in these images.
+
+Keep the five application Dockerfiles with their service code in the application repo. The PostgreSQL and RabbitMQ Dockerfiles here only add their config files; Kubernetes/Helm manifests can live in a separate GitOps repo.
 
 ## Deploy to the kind cluster with Helm and Ingress
 
