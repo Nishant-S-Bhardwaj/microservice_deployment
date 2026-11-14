@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ride booking</title>
+  <style>
+    :root { color-scheme: light; font: 16px system-ui, sans-serif; color: #17211b; background: #f3f6f3; }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    header { background: #163d2a; color: white; padding: 1rem max(1rem, calc((100% - 980px) / 2)); display: flex; justify-content: space-between; align-items: center; }
+    main { max-width: 980px; margin: 2rem auto; padding: 0 1rem; }
+    h1, h2 { margin-top: 0; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1rem; }
+    section, .card { background: white; border: 1px solid #dce5de; border-radius: 12px; padding: 1rem; margin-bottom: 1rem; }
+    label { display: block; font-size: .9rem; margin: .65rem 0 .25rem; }
+    input, select, button { font: inherit; padding: .65rem; border-radius: 7px; border: 1px solid #b9c9bd; width: 100%; }
+    button { border: 0; background: #237247; color: white; cursor: pointer; margin-top: .75rem; }
+    button.secondary { background: #52665a; }
+    button.danger { background: #a33b34; }
+    button:disabled { opacity: .55; cursor: wait; }
+    .row { display: flex; gap: .6rem; }
+    .row > * { flex: 1; min-width: 0; }
+    .muted { color: #5d6b61; }
+    .error { color: #9c2b25; white-space: pre-wrap; }
+    .success { color: #17653a; }
+    .hidden { display: none !important; }
+    .ride { padding: .75rem 0; border-top: 1px solid #e3e9e4; }
+    .badge { background: #e6f3e9; border-radius: 99px; padding: .2rem .55rem; font-size: .82rem; }
+    dialog { border: 0; border-radius: 14px; max-width: 440px; width: calc(100% - 2rem); box-shadow: 0 12px 50px #0004; }
+    dialog::backdrop { background: #10251ab0; }
+    #services { display: flex; flex-wrap: wrap; gap: .5rem; }
+    @media (max-width: 560px) { header { align-items: flex-start; gap: .5rem; flex-direction: column; } }
+  </style>
+</head>
+<body>
+  <header>
+    <strong>Ride booking</strong>
+    <nav><a href="/" style="color:white;margin-right:1rem">Passenger</a><a href="/rider" style="color:white">Rider</a></nav>
+    <span id="session-label"></span>
+  </header>
+  <main>
+    <div id="app">
+      <section>
+        <h1 id="welcome"></h1>
+        <p><strong>Warning:</strong> authentication is disabled and this UI uses shared passenger/rider identities. Do not expose it to an untrusted network.</p>
+      </section>
+
+      <div id="passenger" class="hidden">
+        <section>
+          <h2>Book a ride</h2>
+          <form id="ride-form">
+            <label for="pickup-label">Pickup</label><input id="pickup-label" required placeholder="Pickup address or place">
+            <div class="row">
+              <div><label for="pickup-lat">Latitude</label><input id="pickup-lat" type="number" step="any" min="-90" max="90" value="37.7749" required></div>
+              <div><label for="pickup-lng">Longitude</label><input id="pickup-lng" type="number" step="any" min="-180" max="180" value="-122.4194" required></div>
+            </div>
+            <label for="dropoff-label">Destination</label><input id="dropoff-label" required placeholder="Destination address or place">
+            <div class="row">
+              <div><label for="dropoff-lat">Latitude</label><input id="dropoff-lat" type="number" step="any" min="-90" max="90" value="37.7849" required></div>
+              <div><label for="dropoff-lng">Longitude</label><input id="dropoff-lng" type="number" step="any" min="-180" max="180" value="-122.4094" required></div>
+            </div>
+            <button>Request ride</button>
+            <p id="ride-message" role="status"></p>
+          </form>
+        </section>
+        <section><h2>Your rides</h2><div id="rides"></div></section>
+      </div>
+
+      <div id="rider" class="hidden">
+        <section>
+          <h2>Rider dashboard</h2>
+          <p id="rider-status" class="muted">Loading status…</p>
+          <form id="online-form">
+            <h3>Go online / update location</h3>
+            <div class="row">
+              <div><label for="rider-lat">Latitude</label><input id="rider-lat" type="number" step="any" min="-90" max="90" value="37.7749" required></div>
+              <div><label for="rider-lng">Longitude</label><input id="rider-lng" type="number" step="any" min="-180" max="180" value="-122.4194" required></div>
+            </div>
+            <button>Go online</button>
+            <p id="rider-message" role="status"></p>
+          </form>
+          <div id="current-offer"></div>
+          <section>
+            <h2>Completed rides</h2>
+            <div id="rider-history"></div>
+          </section>
+          <div id="trip-actions" class="hidden">
+            <button id="accept-offer">Accept offer</button>
+            <button id="reject-offer" class="danger">Reject offer</button>
+            <button id="start-trip" class="hidden">Start trip</button>
+            <button id="complete-trip" class="hidden">Complete trip</button>
+          </div>
+        </section>
+      </div>
+
+      <section>
+        <h2>API status</h2>
+        <div id="services"></div>
+        <p class="muted">Route matching and fare calculation run internally from ride events; their services are not exposed through ingress.</p>
+      </section>
+    </div>
+  </main>
+
+  <dialog id="offer-dialog">
+    <h2>New ride offer</h2>
+    <div id="offer-details"></div>
+    <div class="row">
+      <button id="dialog-accept">Accept</button>
+      <button id="dialog-reject" class="danger">Reject</button>
+    </div>
+  </dialog>
+
+  <script>
+    const $ = (selector) => document.querySelector(selector);
+    const state = { role: null, rider: null, poll: null, lastOffer: null };
+    const serviceNames = ['user', 'rider'];
+
+    async function api(service, path, options = {}) {
+      const response = await fetch(`/api/${service}${path}`, {
+        ...options,
+        headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers },
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.error || `${response.status} ${response.statusText}`);
+      return body;
+    }
+
+    function message(selector, text, isError = false) {
+      const element = $(selector);
+      element.textContent = text;
+      element.className = isError ? 'error' : 'success';
+    }
+
+    function showRide(ride) {
+      const item = document.createElement('article');
+      item.className = 'ride';
+      const route = document.createElement('div');
+      route.textContent = `${ride.pickup_label || 'Pickup'} → ${ride.dropoff_label || 'Destination'}`;
+      const meta = document.createElement('div');
+      meta.className = 'muted';
+      meta.textContent = `Ride #${ride.id} · ${ride.status}${ride.rider_name ? ` · Rider: ${ride.rider_name}` : ''}${ride.distance_km ? ` · ${ride.distance_km} km` : ''}${ride.eta_minutes ? ` · ETA ${ride.eta_minutes} min` : ''}${ride.fare != null ? ` · Fare ${ride.fare}` : ''}`;
+      item.append(route, meta);
+      return item;
+    }
+
+    function showCompletedRide(ride) {
+      const item = document.createElement('article');
+      item.className = 'ride';
+      const route = document.createElement('div');
+      route.textContent = `${ride.pickup?.label || `${ride.pickup?.lat}, ${ride.pickup?.lng}`} → ${ride.dropoff?.label || `${ride.dropoff?.lat}, ${ride.dropoff?.lng}`}`;
+      const meta = document.createElement('div');
+      meta.className = 'muted';
+      const duration = ride.duration_minutes == null ? '' : ` · ${Number(ride.duration_minutes).toFixed(1)} min`;
+      meta.textContent = `Ride #${ride.ride_id} · ${ride.distance_km ?? '—'} km${duration} · Fare: ${ride.fare == null ? 'calculating…' : Number(ride.fare).toFixed(2)}`;
+      item.append(route, meta);
+      return item;
+    }
+
+    async function refreshPassenger() {
+      try {
+        const rides = await api('user', '/rides');
+        $('#rides').replaceChildren(...rides.map(showRide));
+      } catch (error) {
+        message('#ride-message', error.message, true);
+      }
+    }
+
+    function offerDescription(offer) {
+      return `<p><b>Pickup:</b> ${escapeHtml(offer.pickup?.label || `${offer.pickup?.lat}, ${offer.pickup?.lng}`)}</p>
+        <p><b>Destination:</b> ${escapeHtml(offer.dropoff?.label || `${offer.dropoff?.lat}, ${offer.dropoff?.lng}`)}</p>
+        <p><b>Trip:</b> ${offer.tripDistanceKm} km · rider ETA ${offer.pickupEtaMinutes} min</p>`;
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
+    }
+
+    function showOffer(offer) {
+      $('#current-offer').innerHTML = offer ? `<div class="card">${offerDescription(offer)}</div>` : '';
+      $('#trip-actions').classList.toggle('hidden', !offer);
+      $('#accept-offer').classList.toggle('hidden', !offer || state.rider.status !== 'OFFERED');
+      $('#reject-offer').classList.toggle('hidden', !offer || state.rider.status !== 'OFFERED');
+      $('#start-trip').classList.toggle('hidden', !offer || state.rider.status !== 'BUSY' || Boolean(state.rider.trip_started_at));
+      $('#complete-trip').classList.toggle('hidden', !offer || state.rider.status !== 'BUSY' || !state.rider.trip_started_at);
+      if (offer && state.lastOffer !== offer.rideId) {
+        state.lastOffer = offer.rideId;
+        $('#offer-details').innerHTML = offerDescription(offer);
+        $('#offer-dialog').showModal();
+        if ('Notification' in window && Notification.permission === 'granted') new Notification('New ride offer', { body: `Ride #${offer.rideId} · ${offer.tripDistanceKm} km` });
+      } else if (!offer) {
+        state.lastOffer = null;
+        $('#offer-dialog').close();
+      }
+    }
+
+    async function refreshRider() {
+      try {
+        const [rider, history] = await Promise.all([
+          api('rider', '/me'),
+          api('rider', '/history'),
+        ]);
+        state.rider = rider;
+        $('#rider-status').textContent = `Status: ${state.rider.status || 'OFFLINE'}${state.rider.last_fare != null ? ` · Last fare: ${state.rider.last_fare}` : ''}`;
+        $('#rider-history').replaceChildren(...history.map(showCompletedRide));
+        showOffer(state.rider.current_offer);
+      } catch (error) {
+        message('#rider-message', error.message, true);
+      }
+    }
+
+    async function refreshServices() {
+      const checks = await Promise.all(serviceNames.map(async (name) => {
+        try {
+          const result = await api(name, '/health');
+          return `${result.service}: online`;
+        } catch {
+          return `${name}: unavailable`;
+        }
+      }));
+      $('#services').replaceChildren(...checks.map((check) => {
+        const badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = check;
+        return badge;
+      }));
+    }
+
+    function showApp(role) {
+      state.role = role;
+      const name = role === 'rider' ? 'Rider' : 'Passenger';
+      $('#session-label').textContent = `${name} · ${role}`;
+      $('#welcome').textContent = name;
+      $('#passenger').classList.toggle('hidden', role !== 'passenger');
+      $('#rider').classList.toggle('hidden', role !== 'rider');
+      clearInterval(state.poll);
+      refreshServices();
+      if (role === 'passenger') {
+        refreshPassenger();
+        state.poll = setInterval(refreshPassenger, 3000);
+      } else {
+        refreshRider();
+        state.poll = setInterval(refreshRider, 2000);
+      }
+    }
+
+    $('#ride-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const point = (lat, lng, label) => ({ lat: Number($(lat).value), lng: Number($(lng).value), label: $(label).value });
+      try {
+        const ride = await api('user', '/rides', {
+          method: 'POST',
+          body: JSON.stringify({ pickup: point('#pickup-lat', '#pickup-lng', '#pickup-label'), dropoff: point('#dropoff-lat', '#dropoff-lng', '#dropoff-label') }),
+        });
+        message('#ride-message', `Ride #${ride.id} requested.`);
+        refreshPassenger();
+      } catch (error) {
+        message('#ride-message', error.message, true);
+      }
+    });
+
+    $('#online-form').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        const result = await api('rider', '/online', {
+          method: 'POST',
+          body: JSON.stringify({ lat: Number($('#rider-lat').value), lng: Number($('#rider-lng').value) }),
+        });
+        message('#rider-message', `You are ${result.status.toLowerCase()}. Waiting for offers.`);
+        if ('Notification' in window && Notification.permission === 'default') await Notification.requestPermission();
+        refreshRider();
+      } catch (error) {
+        message('#rider-message', error.message, true);
+      }
+    });
+
+    async function riderAction(path, button) {
+      button.disabled = true;
+      try {
+        await api('rider', path, { method: 'POST', body: JSON.stringify({}) });
+        $('#offer-dialog').close();
+        await refreshRider();
+      } catch (error) {
+        message('#rider-message', error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    }
+
+    $('#accept-offer').addEventListener('click', (event) => riderAction('/offer/accept', event.currentTarget));
+    $('#dialog-accept').addEventListener('click', (event) => riderAction('/offer/accept', event.currentTarget));
+    $('#reject-offer').addEventListener('click', (event) => riderAction('/offer/reject', event.currentTarget));
+    $('#dialog-reject').addEventListener('click', (event) => riderAction('/offer/reject', event.currentTarget));
+    $('#start-trip').addEventListener('click', (event) => riderAction('/offer/start', event.currentTarget));
+    $('#complete-trip').addEventListener('click', (event) => riderAction('/offer/complete', event.currentTarget));
+    const page = window.location.pathname.replace(/\/+$/, '') || '/';
+    showApp(page === '/rider' ? 'rider' : 'passenger');
+    window.addEventListener('beforeunload', () => clearInterval(state.poll));
+  </script>
+</body>
+</html>

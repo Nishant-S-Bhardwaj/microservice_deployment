@@ -10,6 +10,7 @@ const signup = async (name, role) => (await api('iam', '/signup', 'POST', { name
 const HITEC = { lat: 17.4435, lng: 78.3772, label: 'HITEC' }, CHARMINAR = { lat: 17.3616, lng: 78.4747, label: 'Charminar' }, AIRPORT = { lat: 17.2403, lng: 78.4294, label: 'Airport' };
 const rideOf = (p, id) => api('user', '/rides/' + id, 'GET', null, p.token).then(r => r.body);
 const meOf = (r) => api('rider', '/me', 'GET', null, r.token).then(r => r.body);
+const historyOf = (r) => api('rider', '/history', 'GET', null, r.token).then(r => r.body);
 
 (async () => {
   // --- IAM
@@ -53,6 +54,11 @@ const meOf = (r) => api('rider', '/me', 'GET', null, r.token).then(r => r.body);
   check(`fare = base + km*12 + min*1.5 (expected ${expected})`, done && done.fare === expected, JSON.stringify(done));
   const farAfter = await waitFor(async () => { const m = await meOf(far); return m.last_fare && m; });
   check('rider sees last fare, is AVAILABLE at dropoff', farAfter?.last_fare === expected && farAfter.status === 'AVAILABLE' && Math.abs(farAfter.lat - AIRPORT.lat) < 1e-9, JSON.stringify(farAfter));
+  const completedTrip = await waitFor(async () => {
+    const history = await historyOf(far);
+    return history.find((trip) => trip.ride_id === ride.id && trip.fare === expected);
+  });
+  check('rider can see completed trip and fare in history', !!completedTrip, JSON.stringify(completedTrip));
   check('passenger can request again after completion', (await api('user', '/rides', 'POST', { pickup: HITEC, dropoff: AIRPORT }, p1.token)).status === 201);
 
   // --- race: 3 passengers request at once, only 2 riders exist (p1's new ride also competes) -> exactly 2 assigned, rest NO_RIDERS, never the same rider twice

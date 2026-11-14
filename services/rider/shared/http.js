@@ -10,6 +10,15 @@ class HttpError extends Error {
 const asyncHandler = (handler) => (req, res, next) => Promise.resolve(handler(req, res)).catch(next);
 
 const requireAuth = (requiredRole) => (req, res, next) => {
+  // Local integration demo only; never enable on an untrusted deployment.
+  if (process.env.DEMO_AUTH_DISABLED === 'true' && ['passenger', 'rider'].includes(requiredRole)) {
+    req.user = {
+      id: requiredRole === 'rider' ? 2 : 1,
+      name: requiredRole === 'rider' ? 'Demo Rider' : 'Demo Passenger',
+      role: requiredRole,
+    };
+    return next();
+  }
   try {
     req.user = jwt.verify((req.headers.authorization || '').replace('Bearer ', ''), config.jwtSecret);
   } catch {
